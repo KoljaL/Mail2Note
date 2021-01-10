@@ -7,6 +7,8 @@ error_reporting(E_ALL);
 $hostname       = '{mail.server.com:143}INBOX';
 $username       = 'notes@domain.de';
 $password       = 'ewwfwfwefwefwe';
+$allowed_sender = array('mail@domain.de', 'post@domain.de');
+$allowed_hosts  = array('mail.kasserver.com');
 $new_entry_key  = 'xxx';
 $signature      = '';
 
@@ -28,7 +30,6 @@ if (isset($_POST['key'])){
         $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
         $headers .= "From: myself";
         mail($username, $_POST['topic'], $_POST['items'], $headers);
-
     }
     elseif(isset($_POST['key'])){
         $wrong_key     = "false ";
@@ -37,7 +38,7 @@ if (isset($_POST['key'])){
     }
 } 
 
-// READ UNREAD MAILS
+// READ MAILS
 if ($emails) {
     // echo count($emails);
     $output = '';
@@ -47,11 +48,16 @@ if ($emails) {
         $overview   = imap_fetch_overview($inbox, $email_number, 0);
         $structure  = imap_fetchstructure($inbox, $email_number);
         $headerinfo = imap_headerinfo($inbox, $email_number);
-
-
-        if (!isset($_GET['read'])){
-            if ($overview[0]->seen == 1 ) {continue;}
-        }
+        // pprint($overview);
+        // pprint($structure);
+        // pprint($headerinfo);
+         
+        // GET SENDER-ADDRESS & HOSTNAME AND CHECK IF IN ALLOWED ARRAYS
+         $from_sender = $headerinfo->from[0]->mailbox . "@" . $headerinfo->from[0]->host;
+         $from_host   = $headerinfo->sender[0]->host;
+         if ((!in_array($from_host, $allowed_hosts) and (!in_array($from_sender, $allowed_sender)))) {echo $from_sender.'<br>';continue;} //else{echo $from_sender.'<br>';}
+        // just get the unread mails, instead ?read
+        if (!isset($_GET['read'])){if ($overview[0]->seen == 1 ) {continue;}}
 
         // get message
         $message = imap_fetchbody($inbox, $email_number, 1);
@@ -112,6 +118,7 @@ if( (sizeof($data_file)==0) and (sizeof($data_mail)>1) ){
     $data_file = json_decode(file_get_contents('notes.json'),true);
 }
 
+
 // combine both array and delete duplicates
 if( (sizeof($data_mail)>0) or (sizeof($data_file)>0) ){
     $data_combined = array_merge_recursive($data_file,$data_mail);
@@ -155,6 +162,7 @@ if (isset($_POST['done'])){
         if(isset($data_combined[$key][$param])){
             $bool = ($data_combined[$key][$param]['done'] === 1 ? 0 : 1);
             $data_combined[$key][$param]['done'] = ($data_combined[$key][$param]['done'] === 1 ? 0 : 1);  
+            // pprint($data_combined[$key][$param]);
         } 
     }
 } 
@@ -165,6 +173,7 @@ if (isset($_POST['imp'])){
         if(isset($data_combined[$key][$param])){
             $bool = ($data_combined[$key][$param]['imp'] === 1 ? 0 : 1);
             $data_combined[$key][$param]['imp'] = ($data_combined[$key][$param]['imp'] === 1 ? 0 : 1);  
+            // pprint($data_combined[$key][$param]);
         } 
     }
 } 
@@ -190,21 +199,18 @@ foreach ($data_combined as $topic => $items) {
         if($item['imp']==1){$class .=' imp';}
 
         $html .= "\t\t\t\t<div class ='item'>\n";
-        $html .= "\t\t\t\t\t<span class='$class' title='{$item['date']}' >{$item['name']}</span>\n";
-        $html .= "\t\t\t\t\t<form style='display: none' action=''  method='post'><input type='hidden' name='del' value='{$item['id']}'><button type='submit' id='del_{$item['id']}'> </button></form>\n";
-        $html .= "\t\t\t\t\t<form style='display: none' action=''  method='post'><input type='hidden' name='done' value='{$item['id']}'><button type='submit' id='done_{$item['id']}'> </button></form>\n";
-        $html .= "\t\t\t\t\t<form style='display: none' action=''  method='post'><input type='hidden' name='imp' value='{$item['id']}'><button type='submit' id='imp_{$item['id']}'> </button></form>\n";
-        $html .= "\t\t\t\t\t<span class='icons'>\n";
-        $html .= "\t\t\t\t\t\t<label class='icon_del font_brighter' for='del_{$item['id']}'>&#10008; </label>\n";
-        $html .= "\t\t\t\t\t\t<label class='icon_done font_brighter' for='done_{$item['id']}'> &#10004; </label>\n";
-        $html .= "\t\t\t\t\t\t<label class='icon_imp font_brighter' for='imp_{$item['id']}'> &#10033; </label>\n";
-        $html .= "\t\t\t\t\t</span>\n";
+        $html .= "\t\t\t\t\t<span class='$class'>{$item['name']}</span>\n";
+        $html .= "<div class='icons'><form action='' method='post'>";
+        $html .= "<button type='submita' name='del'  data-tt='{$item['date']}' class='icon icon_cal  font_brighter tt-t'>&#128467;</button>";
+        $html .= "<button type='submit' name='del'     value='{$item['id']}'   class='icon icon_del  font_brighter'     >&#10008; </button>";
+        $html .= "<button type='submit' name='done'    value='{$item['id']}'   class='icon icon_done font_brighter'     >&#10004; </button>";
+        $html .= "<button type='submit' name='imp'     value='{$item['id']}'   class='icon icon_imp  font_brighter'     >&#10033; </button>";
+        $html .= "</form></div>";     
         $html .= "\t\t\t\t</div>\n";
     }
     $html .= "\t\t\t</fieldset>\n\t\t</div>\n";
 } 
-
-
+ 
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -237,12 +243,14 @@ foreach ($data_combined as $topic => $items) {
     #new_entry_hide:checked ~ div.new_entry{display: inline-block;}
     .done{color:#62d196; text-decoration: line-through;}
     .imp{color:#ff8080;}
+    button.icon{background: #1e1e1e; border: 0px solid #315B0087; border-radius: 3px; height: 15px; padding: 0; width: 15px; min-height: 0rem;cursor:pointer;}
     .icons{float:right; visibility: hidden;}
+    .icon_cal{color: #09568d;}
     .icon_done{color: #62d196;}
     .icon_del{color: #ff5458;}
     .icon_imp{color: #ff8080;}
     .item{clear:both; padding-top:.5em;padding-bottom:.5em;}
-    .item:hover span.icons{visibility: visible;}
+    .item:hover div.icons{visibility: visible;}
     .new_entry_button{font-size:50%; color:#315B0087;}
     .new_entry{font-size: 20px;padding: 20px;vertical-align: top;width: 400px; }
     .new_entry fieldset{border-radius:3px;border-style:solid;border-width:2px;border-color:#315B0087; margin:.5em 1em 1.3em 0;width:350px;}
@@ -251,6 +259,39 @@ foreach ($data_combined as $topic => $items) {
 <?=$wrong_key_css?>
     .new_entry input.submit{width:31px; font-size:15px; color: #315B0087;}
     .new_entry textarea{clear:both; width:316px; height: 100px; padding:5px; font-size:14px; margin-top:5px; resize: none;}
+
+    /* https://github.com/floaten/white-bordered-pure-css-tooltips */
+    /* FOR ALL */
+    .tt-t, .tt-r, .tt-b, .tt-l {position: relative;outline: none;} 
+    /* LEFT */
+    .tt-l::before, .tt-l::after {top: 50%;margin-right: -4px;}
+    .tt-l::before {right: calc(100% + 8px + 4px);transform: translateY(-50%);}
+    .tt-l::after  {right: calc(100% + 3px + 4px);transform: translateY(-50%) rotate(-135deg);}
+    /* TOP */
+    .tt-t::before, .tt-t::after {left: 50%;margin-bottom: -4px;}
+    .tt-t::before {bottom: calc(100% + 8px + 4px);transform: translateX(-50%);}
+    .tt-t::after   {bottom: calc(100% + 3px + 4px);transform: translateX(-50%) rotate(-45deg);}
+    /* RIGHT */
+    .tt-r::before, .tt-r::after {top: 50%;margin-left: -4px;}
+    .tt-r::before {left: calc(100% + 8px + 4px);transform: translateY(-50%);}
+    .tt-r::after  {left: calc(100% + 3px + 4px);transform: translateY(-50%) rotate(-315deg);}
+    /* BOTTOM */
+    .tt-b::before, .tt-b::after {left: 50%;margin-top: -4px;}
+    .tt-b::before {top: calc(100% + 8px + 4px);transform: translateX(-50%);}
+    .tt-b::after  {top: calc(100% + 3px + 4px);transform: translateX(-50%) rotate(-225deg);}
+    /* ALL BEFORE & AFTER */
+    .tt-t::before, .tt-t::after, .tt-r::before, .tt-r::after, .tt-b::before, .tt-b::after, .tt-l::before, .tt-l::after {
+    position: absolute;cursor: default;opacity: 0;background-color: #1e1e1e;pointer-events: none;transition: all ease-out 0.25s;box-shadow: none;}
+    /* ALL AFTER */
+    .tt-t::after, .tt-r::after, .tt-b::after, .tt-l::after {
+    content: attr(data-tt_c);width: 15px;height: 15px;border: 1px #09568d; transparent; background-color: transparent;
+    border-bottom-color: transparent;border-left-color: transparent;border-left-color: rgba(0, 0, 0, 0.2);border-bottom-color: rgba(0, 0, 0, 0.2);z-index: 999;}
+    /* ALL BEFORE */
+    .tt-t::before, .tt-r::before, .tt-b::before, .tt-l::before {
+    content: attr(data-tt);padding: 4px 8px;color: #09568d;white-space: pre;border-radius: 4px;
+    border: 1px solid #09568d;text-align: center;font-weight: normal;font-size: 12px;z-index: 998;} 
+    /* ALL HOVER BEFORE & AFTER */
+    .tt-t:hover::before, .tt-t:hover::after, .tt-r:hover::before, .tt-r:hover::after, .tt-b:hover::before, .tt-b:hover::after, .tt-l:hover::before, .tt-l:hover::after {opacity: 1; margin: 0;}
     </style>
 <?= pprint_css();?>
 </head>
@@ -258,6 +299,7 @@ foreach ($data_combined as $topic => $items) {
     <div class="content">
     <h1><a href="">Mail2Note</a><label class='new_entry_button font_brighter' for='new_entry_hide'>&nbsp;&#9998;</label></h1> 
         <?php if (isset($_GET['array'])){pprint($data_combined,'data_combined');} ?>
+        <!-- < ?= pprint($_POST) ?> -->
         <input type="checkbox" id="new_entry_hide" class="hidden" <?=$checked?>>
         <div class="new_entry hidden">
             <fieldset>
@@ -279,6 +321,7 @@ foreach ($data_combined as $topic => $items) {
  
 
 <?
+
 /*‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾ PRETTY_PRINT ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾*/
 function pprint_css() {
     echo <<<EOL
