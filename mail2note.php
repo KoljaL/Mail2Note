@@ -3,33 +3,17 @@ ini_set('display_errors', '1');
 ini_set('display_startup_errors', '1');
 error_reporting(E_ALL);
 
+// CONFIG
 $hostname       = '{mail.server.com:143}INBOX';
 $username       = 'notes@domain.de';
 $password       = 'ewwfwfwefwefwe';
 $new_entry_key  = 'xxx';
 $signature      = '';
 
-
-
-
+// PRESETS & CONNECT
 $wrong_key     = '';
 $wrong_key_css = '';
 $checked       = '';
-if (isset($_POST['key'])){
-    if($_POST['key'] == $new_entry_key){
-        $headers = "MIME-Version: 1.0" . "\r\n";
-        $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
-        $headers .= "From: myself";
-        mail($username, $_POST['topic'], $_POST['items'], $headers);
-
-    }
-    elseif(isset($_POST['key'])){
-        $wrong_key     = "false ";
-        $wrong_key_css =".new_entry input.key::placeholder{color: #a6001a;}";
-        $checked       = 'checked';
-    }
-} 
-
 $inbox         = imap_open($hostname, $username, $password) or die('Cannot connect to server: ' . imap_last_error());
 $emails        = imap_search($inbox, 'ALL');
 $message       = '';
@@ -37,7 +21,23 @@ $data_mail     = array();
 $data_file     = array();
 $data_combined = array();
 
-if (isset($_GET['delete'])) {imap_delete($inbox, $_GET['delete'], FT_UID);}
+// NEW ENTRY
+if (isset($_POST['key'])){
+    if($_POST['key'] == $new_entry_key){
+        $headers  = "MIME-Version: 1.0" . "\r\n";
+        $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
+        $headers .= "From: myself";
+        mail($username, $_POST['topic'], $_POST['items'], $headers);
+
+    }
+    elseif(isset($_POST['key'])){
+        $wrong_key     = "false ";
+        $wrong_key_css = ".new_entry input.key::placeholder{color: #a6001a;}";
+        $checked       = "checked";
+    }
+} 
+
+// READ UNREAD MAILS
 if ($emails) {
     // echo count($emails);
     $output = '';
@@ -47,13 +47,7 @@ if ($emails) {
         $overview   = imap_fetch_overview($inbox, $email_number, 0);
         $structure  = imap_fetchstructure($inbox, $email_number);
         $headerinfo = imap_headerinfo($inbox, $email_number);
-        // pprint($overview);
-        // pprint($structure);
-        // pprint($headerinfo);
-        // echo $overview[0]->msgno; 
-        // echo $overview[0]->subject;
-        // echo $overview[0]->date;
-        // echo $overview[0]->deleted; //
+
 
         if (!isset($_GET['read'])){
             if ($overview[0]->seen == 1 ) {continue;}
@@ -77,18 +71,16 @@ if ($emails) {
         // pprint($message);
 
 
-        // MAKE DATA ARRAY
-        // $subject = '';
-        $subject    = utf8_decode(imap_utf8($overview[0]->subject));
-        // pprint($subject);
-        
+        // MAKE SUBJECT (TOPIC) AND DATE
+        $subject    = utf8_decode(imap_utf8($overview[0]->subject));    
         $date       = utf8_decode(imap_utf8($headerinfo->MailDate)); // date with headerinfo->MailDate, timezone, but breaks maybe in some cases: "Double timezone specification"
         $date       = new DateTime($date);
         $date       = $date->format("d M Y H:i"); 
 
+
         // every item gets parameters
         // reset items array
-        $items =array();
+        $items = array();
         foreach ($message as $nr => $item) {
             $id = md5($item.$subject);
             $id = preg_replace('/[0-9]+/', '', $id);
@@ -97,13 +89,9 @@ if ($emails) {
         }   
 
         // all items belongs to one subject
-        // $data_mail[$subject]  = $items; // old way
         if(!empty($subject) and !empty($items)){
             $data_mail  =  array_merge_recursive($data_mail, array($subject => $items));
         }
-
-        // pprint($data_mail);
-        // pprint($message);
    }    
 }
 imap_errors();
@@ -111,7 +99,7 @@ imap_alerts();
 imap_close($inbox);
  
 
-// get old data from file
+// get existing data from file
 $data_file = json_decode(file_get_contents('notes.json'),true);
 // echo 'sizeof($data_file) '.sizeof($data_file).'<br>';
 
@@ -123,8 +111,6 @@ if( (sizeof($data_file)==0) and (sizeof($data_mail)>1) ){
     file_put_contents('notes.json',$data_mail_j);
     $data_file = json_decode(file_get_contents('notes.json'),true);
 }
-
-
 
 // combine both array and delete duplicates
 if( (sizeof($data_mail)>0) or (sizeof($data_file)>0) ){
@@ -143,7 +129,6 @@ if(sizeof($data_combined) < 1){
 }
 
 
-
 // if duplicate take the first value, right?
 foreach ($data_combined as $topic => $item) {
     foreach ($item as $key => $value) {
@@ -154,7 +139,6 @@ foreach ($data_combined as $topic => $item) {
         }
     }
 }
-
 // delete entry
 if (isset($_POST['del'])){
     $del = $_POST['del'];
@@ -171,7 +155,6 @@ if (isset($_POST['done'])){
         if(isset($data_combined[$key][$param])){
             $bool = ($data_combined[$key][$param]['done'] === 1 ? 0 : 1);
             $data_combined[$key][$param]['done'] = ($data_combined[$key][$param]['done'] === 1 ? 0 : 1);  
-            // pprint($data_combined[$key][$param]);
         } 
     }
 } 
@@ -182,28 +165,24 @@ if (isset($_POST['imp'])){
         if(isset($data_combined[$key][$param])){
             $bool = ($data_combined[$key][$param]['imp'] === 1 ? 0 : 1);
             $data_combined[$key][$param]['imp'] = ($data_combined[$key][$param]['imp'] === 1 ? 0 : 1);  
-            // pprint($data_combined[$key][$param]);
         } 
     }
 } 
 
+// REMOVE EMPTY KEYS
 $data_combined = array_filter($data_combined);
-
-
     
 // save new data to json file
 $data_combined_json = json_encode($data_combined);
 file_put_contents('notes.json',$data_combined_json);
-
 // pprint($data_combined_json);
-// $data_combined = array_filter($data_combined);
-// pprint($_POST);
+
 
 // make topics with items
 $html  = '';
 foreach ($data_combined as $topic => $items) {
     $html  .= "<div class='list'>\n\t\t\t<fieldset>\n";
-    $html .= "\t\t\t\t<legend>$topic</legend>\n";
+    $html  .= "\t\t\t\t<legend>$topic</legend>\n";
     foreach ($items as $item) {
         $class=""; 
         if($item['del']==1){continue;}
@@ -212,7 +191,6 @@ foreach ($data_combined as $topic => $items) {
 
         $html .= "\t\t\t\t<div class ='item'>\n";
         $html .= "\t\t\t\t\t<span class='$class' title='{$item['date']}' >{$item['name']}</span>\n";
-
         $html .= "\t\t\t\t\t<form style='display: none' action=''  method='post'><input type='hidden' name='del' value='{$item['id']}'><button type='submit' id='del_{$item['id']}'> </button></form>\n";
         $html .= "\t\t\t\t\t<form style='display: none' action=''  method='post'><input type='hidden' name='done' value='{$item['id']}'><button type='submit' id='done_{$item['id']}'> </button></form>\n";
         $html .= "\t\t\t\t\t<form style='display: none' action=''  method='post'><input type='hidden' name='imp' value='{$item['id']}'><button type='submit' id='imp_{$item['id']}'> </button></form>\n";
@@ -221,14 +199,11 @@ foreach ($data_combined as $topic => $items) {
         $html .= "\t\t\t\t\t\t<label class='icon_done font_brighter' for='done_{$item['id']}'> &#10004; </label>\n";
         $html .= "\t\t\t\t\t\t<label class='icon_imp font_brighter' for='imp_{$item['id']}'> &#10033; </label>\n";
         $html .= "\t\t\t\t\t</span>\n";
-
-
         $html .= "\t\t\t\t</div>\n";
     }
     $html .= "\t\t\t</fieldset>\n\t\t</div>\n";
 } 
-// pprint($data_combined,0,0,1);
-// pprint($_POST) 
+
 
 ?>
 <!DOCTYPE html>
@@ -304,57 +279,6 @@ foreach ($data_combined as $topic => $items) {
  
 
 <?
-// MARKDOWN OUTPUT
-// format data for md file
-// $md_file ='';
-// foreach ($data_combined as $topic => $items) {
-//     $md_file .= "## $topic\n";
-//     foreach ($items as $item) {
-//         $md_file .= "- {$item['name']}\n";
-//     }
-// }
-// if(!empty($md_file)){
-//     $md_file = "# Notes\n".$md_file;
-//     // file_put_contents('docs/notes.md',$md_file);
-// }
-// pprint($md_file);
-
-
-// date with udate, no timezone...
-// $date =   gmdate("d.M.Y H:i", $overview[0]->udate);
-
-
-// FÜR NICHT PLAINTEXT, WOHL NIHT NOTWENDIG
-// if (isset($structure->parts) && is_array($structure->parts) && isset($structure->parts[1])) {
-//     $part    = $structure->parts[1];
-//     $message = imap_fetchbody($inbox, $email_number, 2);
-//     // pprint($message);
-//     if ($part->encoding == 3) {
-//         $message = imap_base64($message);
-//     }
-//     else if ($part->encoding == 1) {
-//         $message = imap_8bit($message);
-//     }
-//     else if ($part->encoding == 4) {
-//         $message = imap_qprint($message);
-//     }
-
-//     $message = array(explode('<br>', $message));
-//     pprint($message);
-//     $message = strip_tags($message); 
-//     pprint($message);
-// }
-// if mail body is plaintext
-// if ($message == '') {
-//     $message = imap_fetchbody($inbox, $email_number, 1);
-//     // pprint($message);
-//     $message = imap_qprint($message);
-//     // pprint($message);
-//     $message = array(preg_split('/\n|\r\n?/', $message));
-//     // pprint($message);
-// }
- 
-
 /*‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾ PRETTY_PRINT ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾*/
 function pprint_css() {
     echo <<<EOL
@@ -379,8 +303,9 @@ function pprint_css() {
 \t#pretty_print pre span.protected {color: red;}
 \t#pretty_print pre span.private {color: darkorange;}
 \t</style>\n
-EOL;
+EOL;    
 }
+
 function pprint($arr, $name=1, $printable = 0, $type      = 0, $hide      = 0) {
     $bt        = debug_backtrace();
     $caller    = array_shift($bt);
@@ -402,31 +327,31 @@ function pprint($arr, $name=1, $printable = 0, $type      = 0, $hide      = 0) {
 function pprint_array($arr, $p, $printable, $type) {
     if ($printable == 1) {
         $arround = array(
-            'array_1'         => 'array(',
-            'array_2'         => ')',
-            'key_1'         => '"',
-            'key_2'         => '"',
-            'value_1'         => '"',
-            'value_2'         => '"',
+            'array_1'        => 'array(',
+            'array_2'        => ')',
+            'key_1'          => '"',
+            'key_2'          => '"',
+            'value_1'        => '"',
+            'value_2'        => '"',
             'type_1'         => '[',
             'type_2'         => ']',
-            'sep'         => ','
+            'sep'            => ','
         );
     }
     else {
         $arround = array(
             'array_1'         => '',
             'array_2'         => '',
-            'key_1'         => '',
-            'key_2'         => '',
-            'value_1'         => '',
-            'value_2'         => '',
+            'key_1'          => '',
+            'key_2'          => '',
+            'value_1'        => '',
+            'value_2'        => '',
             'type_1'         => '',
             'type_2'         => '',
-            'sep'         => ''
+            'sep'            => ''
         );
     }
-    $t       = gettype($arr);
+    $t = gettype($arr);
     switch ($t) {
         case "NULL":
             echo '<span class="null"><b>NULL</b></span>' . $arround['sep'];
@@ -507,38 +432,4 @@ function pprint_array($arr, $p, $printable, $type) {
         }
         return 'array';
     }
-
- function get_var_name1() {
-  $bt     = debug_backtrace();
-  $value  = $bt[0]['args'][0];
-  $file   = file( $bt[0]['file'] );
-  $source = $file[ $bt[0]['line'] -1 ]; // = "varlog( $myvar ); "
-
-  if ( preg_match( '/varlog\( *\$([^ )]+) *\)/', $source, $matches ) ) {
-    $name = $matches[1];
-    error_log( $name . ': ' . $value );
-  } else {
-    // should never get here
-    error_log( 'varlog: variable name not found.' );
-  }
-}
 /*_________________________________________________ PRETTY_PRINT _________________________________________________*/
-
-
-
-// alle verfügbaren Schlüssel der Arrays von Variablen ausgeben
-// pprint(array_keys(get_defined_vars()));
-// pprint(get_defined_vars());
-
-
-
-
-// $html = new \Exception;
-// var_dump($html->getTraceAsString());
-
-// show_array($data_file);
-// function show_array($array){
-//     echo '<pre>';
-//     var_export($array);
-//     echo '</pre>';
-// }
